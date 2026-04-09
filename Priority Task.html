@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Priority Matrix Pro</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <style>
+        :root {
+            --bg-dark: #1e1e26;
+            --urgent: #ff4757;
+            --medium: #54a0ff;
+            --future: #2ed573;
+            --check: #ffa502;
+            --text-main: #ffffff;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-dark);
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            color: var(--text-main);
+        }
+
+        .container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .priority-grid {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 8px;
+            padding: 8px;
+            pointer-events: none;
+        }
+
+        .priority-cell {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            transition: opacity 0.3s ease;
+        }
+
+        .priority-label {
+            font-size: 3rem;
+            font-weight: 900;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            user-select: none;
+        }
+
+        /* Layout: Medium Top-Left | Urgent Top-Right */
+        .cell-medium { background: linear-gradient(135deg, #54a0ff1a, #54a0ff0d); border: 2px dashed var(--medium); }
+        .cell-urgent { background: linear-gradient(135deg, #ff47571a, #ff47570d); border: 2px dashed var(--urgent); }
+        .cell-future { background: linear-gradient(135deg, #2ed5731a, #2ed5730d); border: 2px dashed var(--future); }
+        .cell-check  { background: linear-gradient(135deg, #ffa5021a, #ffa5020d); border: 2px dashed var(--check); }
+
+        .cell-medium .priority-label { color: var(--medium); opacity: 0.4; }
+        .cell-urgent .priority-label { color: var(--urgent); opacity: 0.4; }
+        .cell-future .priority-label { color: var(--future); opacity: 0.4; }
+        .cell-check .priority-label  { color: var(--check); opacity: 0.4; }
+
+        .canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 20;
+        }
+
+        .controls {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            background: rgba(30, 30, 38, 0.95);
+            padding: 12px 24px;
+            border-radius: 50px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .btn {
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .btn-add { background: #ffffff; color: #000; }
+        .btn-add:hover { background: #e0e0e0; transform: scale(1.05); }
+
+        .btn-clear { background: #3d3d4d; color: #ff4757; }
+        .btn-clear:hover { background: #4d4d5d; }
+
+        .status {
+            font-size: 12px;
+            color: #888;
+            font-family: 'Monaco', monospace;
+        }
+
+        kbd {
+            background: #333;
+            padding: 2px 5px;
+            border-radius: 4px;
+            color: #eee;
+            border: 1px solid #555;
+            font-size: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="priority-grid">
+            <div class="priority-cell cell-medium">
+                <div class="priority-label">MEDIUM</div>
+            </div>
+            <div class="priority-cell cell-urgent">
+                <div class="priority-label">URGENT</div>
+            </div>
+            <div class="priority-cell cell-future">
+                <div class="priority-label">FUTURE PLANNING</div>
+            </div>
+            <div class="priority-cell cell-check">
+                <div class="priority-label">TO BE CHECK</div>
+            </div>
+        </div>
+
+        <div class="canvas-container">
+            <canvas id="priorityCanvas"></canvas>
+        </div>
+
+        <div class="controls">
+            <button class="btn btn-add" onclick="addNewNote()">+ NEW TASK</button>
+            <div class="status">
+                <kbd>Ctrl</kbd>+Click: Add | <kbd>Ctrl</kbd>+Right-Click: Delete
+            </div>
+            <button class="btn btn-clear" onclick="clearAllNotes()">CLEAR BOARD</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = new fabric.Canvas('priorityCanvas', {
+            backgroundColor: 'transparent',
+            selection: true,
+            fireRightClick: true,
+            stopContextMenu: true 
+        });
+
+        function resize() {
+            canvas.setDimensions({
+                width: window.innerWidth,
+                height: window.innerHeight
+            });
+            canvas.renderAll();
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        const createNote = (text, x, y) => {
+            return new fabric.Textbox(text, {
+                left: x,
+                top: y,
+                width: 200,
+                fontSize: 16,
+                fontFamily: 'Inter, Segoe UI, sans-serif',
+                fill: '#ffffff',
+                backgroundColor: '#2d2d3a',
+                padding: 15,
+                cornerColor: '#54a0ff',
+                cornerSize: 8,
+                transparentCorners: false,
+                fontWeight: '500',
+                rx: 10,
+                ry: 10,
+                shadow: new fabric.Shadow({
+                    color: 'rgba(0,0,0,0.4)',
+                    blur: 15,
+                    offsetX: 5,
+                    offsetY: 5
+                })
+            });
+        };
+
+        function addNewNote() {
+            const text = prompt('Task Description:', '');
+            if (!text) return;
+            const note = createNote(text, canvas.width/2 - 100, canvas.height/2 - 40);
+            canvas.add(note);
+            canvas.setActiveObject(note);
+            saveCanvas();
+        }
+
+        canvas.on('mouse:down', (opt) => {
+            const pointer = canvas.getPointer(opt.e);
+            if (opt.e.ctrlKey && opt.e.button !== 2) {
+                const text = prompt('Quick Task:', '');
+                if (text) {
+                    canvas.add(createNote(text, pointer.x, pointer.y));
+                    saveCanvas();
+                }
+            }
+            if (opt.e.button === 2 && opt.e.ctrlKey) {
+                const target = canvas.findTarget(opt.e);
+                if (target) {
+                    canvas.remove(target);
+                    canvas.discardActiveObject();
+                    canvas.requestRenderAll();
+                    saveCanvas();
+                }
+                opt.e.preventDefault();
+            }
+        });
+
+        canvas.on('object:moving', (e) => {
+            const obj = e.target;
+            obj.setCoords();
+            if (obj.left < 0) obj.left = 0;
+            if (obj.top < 0) obj.top = 0;
+            if (obj.left + obj.getScaledWidth() > canvas.width) obj.left = canvas.width - obj.getScaledWidth();
+            if (obj.top + obj.getScaledHeight() > canvas.height) obj.top = canvas.height - obj.getScaledHeight();
+        });
+
+        canvas.on('object:modified', saveCanvas);
+
+        function saveCanvas() {
+            localStorage.setItem('priority_pro_data_v4', JSON.stringify(canvas));
+        }
+
+        function loadCanvas() {
+            const saved = localStorage.getItem('priority_pro_data_v4');
+            if (saved) {
+                canvas.loadFromJSON(saved, () => canvas.renderAll());
+            }
+        }
+
+        function clearAllNotes() {
+            if (confirm('Clear the entire board?')) {
+                canvas.clear();
+                localStorage.removeItem('priority_pro_data_v4');
+            }
+        }
+
+        document.addEventListener('contextmenu', e => e.preventDefault());
+        loadCanvas();
+    </script>
+</body>
+</html>
